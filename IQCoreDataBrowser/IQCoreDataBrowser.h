@@ -19,6 +19,10 @@
 - (id)initWithContext:(NSManagedObjectContext*)moc;
 
 - (id)initWithTitle:(NSString*)title
+       fetchRequest:(NSFetchRequest*)fetchRequest
+            context:(NSManagedObjectContext*)moc;
+
+- (id)initWithTitle:(NSString*)title
          entityName:(NSString*)entityName
           predicate:(NSPredicate*)predicate
             context:(NSManagedObjectContext*)moc;
