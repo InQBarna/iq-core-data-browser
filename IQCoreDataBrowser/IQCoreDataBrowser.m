@@ -30,6 +30,13 @@ typedef enum {
 @implementation IQCoreDataBrowser
 
 #pragma mark -
+#pragma mark NSObject methods
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark -
 #pragma mark UIViewController methods
 
 - (void)viewDidLoad
@@ -68,42 +75,37 @@ typedef enum {
         self.moc = moc;
         
         self.entities = [moc.persistentStoreCoordinator.managedObjectModel.entities sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(reloadTableView)
+                                                     name:NSManagedObjectContextObjectsDidChangeNotification
+                                                   object:moc];
     }
     return self;
 }
 
 - (id)initWithTitle:(NSString*)title
-         entityName:(NSString*)entityName
-          predicate:(NSPredicate*)predicate
-            context:(NSManagedObjectContext*)moc
+         fetchRequest:(NSFetchRequest*)fetchRequest
+              context:(NSManagedObjectContext*)moc
 {
     NSParameterAssert(moc.persistentStoreCoordinator.managedObjectModel != nil);
-    NSParameterAssert(entityName != nil);
-    NSDictionary *tmp = [moc.persistentStoreCoordinator.managedObjectModel entitiesByName];
-    NSEntityDescription *description = [tmp objectForKey:entityName];
-    NSParameterAssert(description);
+    NSParameterAssert(fetchRequest != nil);
+    
+    NSString *entityName = fetchRequest.entityName;
+    NSDictionary *entitiesByName = [moc.persistentStoreCoordinator.managedObjectModel entitiesByName];
+    NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
+    
+    NSAssert(entityDescription, @"No NSEntityDescription for '%@'", entityName);
     
     self = [self initWithStyle:UITableViewStylePlain];
     if(self) {
         self.title = title;
         self.mode = IQCoreDataBrowserModePredicate;
         self.moc = moc;
-        self.predicate = predicate;
-        self.entityDescription = description;
+        self.predicate = fetchRequest.predicate;
+        self.entityDescription = entityDescription;
         
-        NSFetchRequest *fr = [NSFetchRequest fetchRequestWithEntityName:description.name];
-        fr.predicate = predicate;
-        
-        NSString *keyPath = [self.class identifierKeyPathForEntityDescription:description];
-        if(!keyPath) {
-            NSAttributeDescription *d = description.attributesByName.allValues.firstObject;
-            keyPath = d.name;
-        }
-        
-        NSAssert(keyPath, @"Don't know how to sort entity '%@'", entityName);
-        fr.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:keyPath ascending:YES]];
-        
-        self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fr
+        self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
                                                                             managedObjectContext:moc
                                                                               sectionNameKeyPath:nil
                                                                                        cacheName:nil];
@@ -116,7 +118,52 @@ typedef enum {
     return self;
 }
 
-- (id)initWithTitle:(NSString*)title objectList:(NSArray*)objects context:(NSManagedObjectContext*)moc
+- (id)initWithTitle:(NSString*)title
+         entityName:(NSString*)entityName
+          predicate:(NSPredicate*)predicate
+            context:(NSManagedObjectContext*)moc
+{
+    NSParameterAssert(moc.persistentStoreCoordinator.managedObjectModel != nil);
+    NSParameterAssert(entityName != nil);
+    NSDictionary *entitiesByName = [moc.persistentStoreCoordinator.managedObjectModel entitiesByName];
+    NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
+    NSParameterAssert(entityDescription);
+    
+    self = [self initWithStyle:UITableViewStylePlain];
+    if(self) {
+        self.title = title;
+        self.mode = IQCoreDataBrowserModePredicate;
+        self.moc = moc;
+        self.predicate = predicate;
+        self.entityDescription = entityDescription;
+        
+        NSString *keyPath = [self.class identifierKeyPathForEntityDescription:entityDescription];
+        if(!keyPath) {
+            NSAttributeDescription *d = entityDescription.attributesByName.allValues.firstObject;
+            keyPath = d.name;
+        }
+        NSAssert(keyPath, @"Don't know how to sort entity '%@'", entityName);
+        
+        NSFetchRequest *fetchRequest = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
+        fetchRequest.predicate = predicate;
+        fetchRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:keyPath ascending:YES]];
+        
+        self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
+                                                                            managedObjectContext:moc
+                                                                              sectionNameKeyPath:nil
+                                                                                       cacheName:nil];
+        
+        NSError *error = nil;
+        if(![self.fetchedResultsController performFetch:&error]) {
+            NSLog(@"%@", error);
+        }
+    }
+    return self;
+}
+
+- (id)initWithTitle:(NSString*)title
+         objectList:(NSArray*)objects
+            context:(NSManagedObjectContext*)moc
 {
     NSParameterAssert(moc.persistentStoreCoordinator.managedObjectModel != nil);
     
@@ -126,6 +173,11 @@ typedef enum {
         self.mode = IQCoreDataBrowserModeObjectList;
         self.moc = moc;
         self.objects = objects.copy;
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(reloadTableView)
+                                                     name:NSManagedObjectContextObjectsDidChangeNotification
+                                                   object:moc];
     }
     return self;
 }
@@ -144,8 +196,21 @@ typedef enum {
         self.attributes = [self.entityDescription.attributesByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
         
         self.relationships = [self.entityDescription.relationshipsByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
+        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(reloadTableView)
+                                                     name:NSManagedObjectContextObjectsDidChangeNotification
+                                                   object:self.moc];
     }
     return self;
+}
+
+- (void)reloadTableView {
+    [self.tableView reloadData];
+    
+    if(self.mode == IQCoreDataBrowserModeObject) {
+        self.title = [self titleForObject:self.object];
+    }
 }
 
 - (void)configureCell:(UITableViewCell*)cell forEntity:(NSEntityDescription*)entityDescription
