@@ -1,9 +1,25 @@
 //
-//  IQCoreDataBrowser.m
+// Author: David Romacho <david.romacho@inqbarna.com>
 //
-//  Created by David Romacho on 07/10/15.
-//  Copyright © 2015 InQBarna Kenkyuu Jo. All rights reserved.
+// Copyright (c) 2016 InQBarna Kenkyuu Jo (http://inqbarna.com/)
 //
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 #import "IQCoreDataBrowser.h"
 
@@ -14,18 +30,22 @@ typedef enum {
     IQCoreDataBrowserModeObject
 } IQCoreDataBrowserMode;
 
-@interface IQCoreDataBrowser ()<NSFetchedResultsControllerDelegate>
-@property (nonatomic, assign) IQCoreDataBrowserMode         mode;
-@property (nonatomic, strong) NSManagedObjectContext        *moc;
-@property (nonatomic, strong) NSManagedObject               *object;
-@property (nonatomic, strong) NSPredicate                   *predicate;
-@property (nonatomic, strong) NSEntityDescription           *entityDescription;
-@property (nonatomic, strong) NSArray                       *entities;
-@property (nonatomic, strong) NSArray                       *objects;
-@property (nonatomic, strong) NSArray                       *attributes;
-@property (nonatomic, strong) NSArray                       *relationships;
-@property (nonatomic, strong) NSFetchedResultsController    *fetchedResultsController;
+NS_ASSUME_NONNULL_BEGIN
+@interface IQCoreDataBrowser ()<NSFetchedResultsControllerDelegate, UISearchBarDelegate>
+@property (nonatomic, assign) IQCoreDataBrowserMode                 mode;
+@property (nonatomic, strong, nullable) NSManagedObjectContext      *moc;
+@property (nonatomic, strong, nullable) NSManagedObject             *object;
+@property (nonatomic, strong, nullable) NSFetchRequest              *fetchRequest;
+@property (nonatomic, strong, nullable) NSEntityDescription         *entityDescription;
+@property (nonatomic, strong, nullable) NSArray                     *entities;
+@property (nonatomic, copy,   nullable) NSArray                     *objects;
+@property (nonatomic, copy,   nullable) NSArray                     *allObjects;
+@property (nonatomic, copy,   nullable) NSArray                     *attributes;
+@property (nonatomic, copy,   nullable) NSArray                     *relationships;
+@property (nonatomic, strong, nullable) NSFetchedResultsController  *fetchedResultsController;
+@property (nonatomic, strong, nullable) UISearchBar                 *searchBar;
 @end
+NS_ASSUME_NONNULL_END
 
 @implementation IQCoreDataBrowser
 
@@ -42,11 +62,28 @@ typedef enum {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    
+    if(self.mode != IQCoreDataBrowserModeObjectList) {
+        UISearchBar *searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0.0f, 0.0f, self.tableView.frame.size.width, 44.0f)];
+        searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+        searchBar.delegate = self;
+        searchBar.keyboardType = UIKeyboardTypeDefault;
+        searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        self.tableView.tableHeaderView = searchBar;
+        self.searchBar = searchBar;
+    }
+    
+    [self reloadTableView];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
     if(self.navigationController.presentingViewController) {
-        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Done"
-                                                                                 style:UIBarButtonItemStyleDone
-                                                                                target:self
-                                                                                 action:@selector(dismiss)];
+        UIBarButtonItem *item = [[UIBarButtonItem alloc] initWithTitle:@"Done"
+                                                                 style:UIBarButtonItemStyleDone
+                                                                target:self
+                                                                action:@selector(dismiss)];
+        self.navigationItem.rightBarButtonItem = item;
     }
 }
 
@@ -60,7 +97,7 @@ typedef enum {
     } else {
         nc.modalPresentationStyle = UIModalPresentationFullScreen;
     }
-
+    
     [vc presentViewController:nc animated:YES completion:nil];
 }
 
@@ -73,9 +110,6 @@ typedef enum {
         self.title = @"Entities";
         self.mode = IQCoreDataBrowserModeContext;
         self.moc = moc;
-        
-        self.entities = [moc.persistentStoreCoordinator.managedObjectModel.entities sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
-        
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(reloadTableView)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
@@ -85,16 +119,16 @@ typedef enum {
 }
 
 - (id)initWithTitle:(NSString*)title
-         fetchRequest:(NSFetchRequest*)fetchRequest
-              context:(NSManagedObjectContext*)moc
+       fetchRequest:(NSFetchRequest*)fetchRequest
+            context:(NSManagedObjectContext*)moc
 {
     NSParameterAssert(moc.persistentStoreCoordinator.managedObjectModel != nil);
     NSParameterAssert(fetchRequest != nil);
+    NSParameterAssert(fetchRequest.entityName);
     
     NSString *entityName = fetchRequest.entityName;
     NSDictionary *entitiesByName = [moc.persistentStoreCoordinator.managedObjectModel entitiesByName];
     NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
-    
     NSAssert(entityDescription, @"No NSEntityDescription for '%@'", entityName);
     
     self = [self initWithStyle:UITableViewStylePlain];
@@ -102,18 +136,8 @@ typedef enum {
         self.title = title;
         self.mode = IQCoreDataBrowserModePredicate;
         self.moc = moc;
-        self.predicate = fetchRequest.predicate;
+        self.fetchRequest = fetchRequest;
         self.entityDescription = entityDescription;
-        
-        self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
-                                                                            managedObjectContext:moc
-                                                                              sectionNameKeyPath:nil
-                                                                                       cacheName:nil];
-        
-        NSError *error = nil;
-        if(![self.fetchedResultsController performFetch:&error]) {
-            NSLog(@"%@", error);
-        }
     }
     return self;
 }
@@ -127,42 +151,26 @@ typedef enum {
     NSParameterAssert(entityName != nil);
     NSDictionary *entitiesByName = [moc.persistentStoreCoordinator.managedObjectModel entitiesByName];
     NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
-    NSParameterAssert(entityDescription);
+    NSAssert(entityDescription, @"No NSEntityDescription for '%@'", entityName);
     
-    self = [self initWithStyle:UITableViewStylePlain];
-    if(self) {
-        self.title = title;
-        self.mode = IQCoreDataBrowserModePredicate;
-        self.moc = moc;
-        self.predicate = predicate;
-        self.entityDescription = entityDescription;
-        
-        NSString *keyPath = [self.class identifierKeyPathForEntityDescription:entityDescription];
-        if(!keyPath) {
-            NSAttributeDescription *d = entityDescription.attributesByName.allValues.firstObject;
-            keyPath = d.name;
-        }
-        NSAssert(keyPath, @"Don't know how to sort entity '%@'", entityName);
-        
-        NSFetchRequest *fetchRequest = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
-        fetchRequest.predicate = predicate;
-        fetchRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:keyPath ascending:YES]];
-        
-        self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
-                                                                            managedObjectContext:moc
-                                                                              sectionNameKeyPath:nil
-                                                                                       cacheName:nil];
-        
-        NSError *error = nil;
-        if(![self.fetchedResultsController performFetch:&error]) {
-            NSLog(@"%@", error);
-        }
+    NSString *keyPath = [self.class identifierKeyPathForEntityDescription:entityDescription];
+    if(!keyPath) {
+        NSAttributeDescription *d = entityDescription.attributesByName.allValues.firstObject;
+        keyPath = d.name;
     }
-    return self;
+    
+    NSAssert(keyPath, @"Don't know how to sort entity '%@'", entityName);
+    NSArray *sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:keyPath ascending:YES]];
+    
+    NSFetchRequest *fetchRequest = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
+    fetchRequest.predicate = predicate;
+    fetchRequest.sortDescriptors = sortDescriptors;
+    
+    return [self initWithTitle:title fetchRequest:fetchRequest context:moc];
 }
 
 - (id)initWithTitle:(NSString*)title
-         objectList:(NSArray*)objects
+         objectList:(NSArray<NSManagedObject*>*)objects
             context:(NSManagedObjectContext*)moc
 {
     NSParameterAssert(moc.persistentStoreCoordinator.managedObjectModel != nil);
@@ -172,7 +180,7 @@ typedef enum {
         self.title = title;
         self.mode = IQCoreDataBrowserModeObjectList;
         self.moc = moc;
-        self.objects = objects.copy;
+        self.allObjects = objects;
         
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(reloadTableView)
@@ -193,9 +201,6 @@ typedef enum {
         self.moc = object.managedObjectContext;
         self.object = object;
         self.entityDescription = object.entity;
-        self.attributes = [self.entityDescription.attributesByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
-        
-        self.relationships = [self.entityDescription.relationshipsByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
         
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(reloadTableView)
@@ -205,7 +210,142 @@ typedef enum {
     return self;
 }
 
-- (void)reloadTableView {
+- (NSPredicate*)searchPredicateForEntity:(NSEntityDescription*)entity text:(NSString*)text
+{
+    if(text.length) {
+        NSMutableArray *predicates = [NSMutableArray array];
+        for(NSAttributeDescription *ad in entity.attributesByName.allValues) {
+            if(ad.attributeType == NSStringAttributeType) {
+                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", ad.name, text];
+                if(p) {
+                    [predicates addObject:p];
+                }
+            } else if(ad.attributeType == NSInteger16AttributeType ||
+                      ad.attributeType == NSInteger32AttributeType ||
+                      ad.attributeType == NSInteger64AttributeType ||
+                      ad.attributeType == NSDoubleAttributeType ||
+                      ad.attributeType == NSFloatAttributeType) {
+                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", ad.name, text];
+                if(p) {
+                    [predicates addObject:p];
+                }
+            }
+        }
+        
+        if(predicates.count) {
+            NSPredicate *result = [NSCompoundPredicate orPredicateWithSubpredicates:predicates];
+            return result;
+        }
+    }
+    
+    return nil;
+}
+
+- (NSEntityDescription*)entityWithName:(NSString*)entityName
+{
+    NSAssert(entityName, @"No entity name provided");
+    NSEntityDescription *entity = [self.moc.persistentStoreCoordinator.managedObjectModel.entitiesByName objectForKey:entityName];
+    
+    NSAssert(entity, @"Could not find entity with name '%@'", entityName);
+    return entity;
+}
+
+- (void)reloadTableView
+{
+    NSString *searchText = self.searchBar.text;
+    
+    switch (self.mode) {
+        case IQCoreDataBrowserModeContext: {
+            NSArray *entities = [self.moc.persistentStoreCoordinator.managedObjectModel.entities sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
+            
+            if(searchText.length) {
+                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", @"name", searchText];
+                entities = [entities filteredArrayUsingPredicate:p];
+            }
+            self.entities = entities;
+        } break;
+            
+        case IQCoreDataBrowserModePredicate: {
+            
+            NSFetchRequest *fetchRequest = [self.fetchRequest copy];
+            NSEntityDescription *entity = [self entityWithName:fetchRequest.entityName];
+            NSPredicate *filter = [self searchPredicateForEntity:entity text:searchText];
+            
+            if(fetchRequest.predicate) {
+                filter = [NSCompoundPredicate andPredicateWithSubpredicates:@[filter, fetchRequest.predicate]];
+            } else {
+                fetchRequest.predicate = filter;
+            }
+            
+            self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
+                                                                                managedObjectContext:self.moc
+                                                                                  sectionNameKeyPath:nil
+                                                                                           cacheName:nil];
+            
+            NSError *error = nil;
+            if(![self.fetchedResultsController performFetch:&error]) {
+                NSLog(@"%@", error);
+            }
+        } break;
+            
+        case IQCoreDataBrowserModeObjectList: {
+            self.objects = self.allObjects;
+        } break;
+            
+        case IQCoreDataBrowserModeObject: {
+            
+            NSArray<NSAttributeDescription*> *attributes = [self.entityDescription.attributesByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
+            
+            NSArray<NSRelationshipDescription*> *relationships = [self.entityDescription.relationshipsByName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES]]];
+            
+            if(searchText.length) {
+                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", @"name" , searchText];
+                
+                relationships = [relationships filteredArrayUsingPredicate:p];
+                
+                NSMutableArray *tmp = [NSMutableArray array];
+                
+                [attributes enumerateObjectsUsingBlock:^(NSAttributeDescription * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop)
+                 {
+                     if([p evaluateWithObject:obj]) {
+                         [tmp addObject:obj];
+                         
+                     } else if(obj.attributeType == NSStringAttributeType) {
+                         NSString *value = [self.object valueForKey:obj.name];
+                         if([value isKindOfClass:[NSString class]]) {
+                             NSRange range = [value rangeOfString:searchText
+                                                          options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch];
+                             if(range.location != NSNotFound) {
+                                 [tmp addObject:obj];
+                             }
+                         }
+                     } else if(obj.attributeType == NSInteger16AttributeType ||
+                               obj.attributeType == NSInteger32AttributeType ||
+                               obj.attributeType == NSInteger64AttributeType ||
+                               obj.attributeType == NSDoubleAttributeType ||
+                               obj.attributeType == NSFloatAttributeType)
+                     {
+                         NSNumber *value = [self.object valueForKey:obj.name];
+                         if([value isKindOfClass:[NSNumber class]]) {
+                             NSRange range = [value.stringValue rangeOfString:searchText
+                                                                      options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch];
+                             if(range.location != NSNotFound) {
+                                 [tmp addObject:obj];
+                             }
+                         }
+                     }
+                 }];
+                
+                attributes = tmp.copy;
+            }
+            self.attributes = attributes;
+            self.relationships = relationships;
+        } break;
+            
+        default:
+            break;
+    }
+    
     [self.tableView reloadData];
     
     if(self.mode == IQCoreDataBrowserModeObject) {
@@ -213,10 +353,25 @@ typedef enum {
     }
 }
 
+- (NSAttributedString*)highlightText:text
+{
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:text
+                                                                               attributes:@{NSForegroundColorAttributeName : [UIColor blackColor]}];
+    
+    if(self.searchBar.text) {
+        NSRange range = [text rangeOfString:self.searchBar.text options:NSCaseInsensitiveSearch];
+        if(range.location != NSNotFound) {
+            [result addAttributes:@{NSForegroundColorAttributeName : [UIColor blueColor]} range:range];
+        }
+    }
+    
+    return result;
+}
+
 - (void)configureCell:(UITableViewCell*)cell forEntity:(NSEntityDescription*)entityDescription
 {
     // Set title
-    cell.textLabel.text = entityDescription.name;
+    cell.textLabel.attributedText = [self highlightText:entityDescription.name];
     
     // Set detail
     NSFetchRequest *fr = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
@@ -240,40 +395,44 @@ typedef enum {
 - (void)configureCell:(UITableViewCell*)cell forObject:(NSManagedObject*)object
 {
     // Set title
-    cell.textLabel.text = [self titleForObject:object];
-    cell.detailTextLabel.text = [self detailForObject:object];
+    cell.textLabel.attributedText = [self highlightText:[self titleForObject:object]];
+    
+    // Set detail
     cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+    cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object]];
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 }
 
 - (void)configureCell:(UITableViewCell*)cell forAttribute:(NSAttributeDescription*)attribute
 {
     id value = [self.object valueForKey:attribute.name];
-    cell.textLabel.text = [NSString stringWithFormat:@"%@ (%@)",
-                           attribute.name,
-                           [self.class nameForAttributeType:attribute.attributeType]];
+    NSString *title = [NSString stringWithFormat:@"%@ (%@)",
+                       attribute.name,
+                       [self.class nameForAttributeType:attribute.attributeType]];
+    cell.textLabel.attributedText = [self highlightText:title];
     
     if(value) {
-        cell.detailTextLabel.text = [value description];
         cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.attributedText = [self highlightText:[value description]];
+        
     } else {
-        cell.detailTextLabel.text = @"nil";
         cell.detailTextLabel.textColor = [UIColor orangeColor];
+        cell.detailTextLabel.text = @"nil";
     }
-
+    
     cell.accessoryType = UITableViewCellAccessoryNone;
 }
 
 - (void)configureCell:(UITableViewCell*)cell forRelationship:(NSRelationshipDescription*)r
 {
-    cell.textLabel.text = r.name;
+    cell.textLabel.attributedText = [self highlightText:r.name];
     
     id value = [self.object valueForKey:r.name];
     
     NSString *detail = r.toMany ? @"To Many " : @"To One ";
     detail = [detail stringByAppendingString:r.destinationEntity.name];
     NSUInteger count = 0;
-
+    
     if(r.toMany) {
         if(r.ordered) {
             detail = [detail stringByAppendingString:@", Ordered"];
@@ -288,13 +447,13 @@ typedef enum {
             count = 1;
         }
     }
-
+    
     cell.accessoryType = UITableViewCellAccessoryNone;
     if(!value) {
         detail = [detail stringByAppendingString:@", nil"];
         cell.detailTextLabel.textColor = [UIColor orangeColor];
     } else {
-
+        
         if(r.toMany) {
             detail = [detail stringByAppendingFormat:@", %@ objects", @(count).stringValue];
             if(count > 0) {
@@ -303,7 +462,7 @@ typedef enum {
         } else {
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];        
+        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
     }
     cell.detailTextLabel.text = detail;
 }
@@ -436,7 +595,7 @@ typedef enum {
         case IQCoreDataBrowserModePredicate: return self.fetchedResultsController.fetchedObjects.count;
         case IQCoreDataBrowserModeObjectList: return self.objects.count;
         case IQCoreDataBrowserModeObject: return (section == 0) ? self.attributes.count : self.relationships.count;
-
+            
         default:
             NSAssert(NO, @"Unknown mode %@", @(self.mode));
             return 0;
@@ -452,7 +611,7 @@ typedef enum {
             NSEntityDescription *d = [self.entities objectAtIndex:indexPath.row];
             [self configureCell:cell forEntity:d];
         } break;
-
+            
         case IQCoreDataBrowserModePredicate: {
             NSManagedObject *o = [self.fetchedResultsController objectAtIndexPath:indexPath];
             [self configureCell:cell forObject:o];
@@ -499,7 +658,7 @@ typedef enum {
             NSManagedObject *o = [self.fetchedResultsController objectAtIndexPath:indexPath];
             vc = [[IQCoreDataBrowser alloc] initWithObject:o];
         } break;
-
+            
         case IQCoreDataBrowserModeObjectList: {
             NSManagedObject *o = [self.objects objectAtIndex:indexPath.row];
             vc = [[IQCoreDataBrowser alloc] initWithObject:o];
@@ -552,6 +711,40 @@ typedef enum {
         default:
             return nil;
     }
+}
+
+#pragma mark -
+#pragma mark UISearchBarDelegate methods
+
+// called when text ends editing
+- (void)searchBarTextDidEndEditing:(UISearchBar *)searchBar
+{
+    [self reloadTableView];
+}
+
+// called when text changes (including clear)
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText
+{
+    [self reloadTableView];
+}
+
+// called before text changes
+- (BOOL)searchBar:(UISearchBar *)searchBar shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text
+{
+    return YES;
+}
+
+// called when keyboard search button pressed
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar
+{
+    [self reloadTableView];
+}
+
+// called when cancel button pressed
+- (void)searchBarCancelButtonClicked:(UISearchBar *)searchBar
+{
+    searchBar.text = nil;
+    [self reloadTableView];
 }
 
 @end

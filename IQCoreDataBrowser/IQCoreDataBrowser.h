@@ -1,17 +1,35 @@
 //
-//  IQCoreDataBrowser.h
+// Author: David Romacho <david.romacho@inqbarna.com>
 //
-//  Created by David Romacho on 07/10/15.
-//  Copyright © 2015 InQBarna Kenkyuu Jo. All rights reserved.
+// Copyright (c) 2016 InQBarna Kenkyuu Jo (http://inqbarna.com/)
 //
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 #import <CoreData/CoreData.h>
 #import <UIKit/UIKit.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 @protocol IQCoreDataBrowserProtocol <NSObject>
 @optional
-- (NSString*)coreDataBrowserTitle;
-- (NSString*)coreDataBrowserDetail;
+- (nullable NSString*)coreDataBrowserTitle;
+- (nullable NSString*)coreDataBrowserDetail;
 @end
 
 @interface IQCoreDataBrowser : UITableViewController
@@ -24,12 +42,17 @@
 
 - (id)initWithTitle:(NSString*)title
          entityName:(NSString*)entityName
-          predicate:(NSPredicate*)predicate
+          predicate:(NSPredicate * _Nullable)predicate
             context:(NSManagedObjectContext*)moc;
 
 - (id)initWithObject:(NSManagedObject*)object;
 
-- (id)initWithTitle:(NSString*)title objectList:(NSArray*)objects context:(NSManagedObjectContext*)moc;
+- (id)initWithTitle:(NSString*)title
+         objectList:(NSArray<NSManagedObject*> *)objects
+            context:(NSManagedObjectContext*)moc;
 
 - (void)presentFromViewController:(UIViewController*)vc;
+
 @end
+
+NS_ASSUME_NONNULL_END
