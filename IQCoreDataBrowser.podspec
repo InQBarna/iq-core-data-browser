@@ -2,7 +2,7 @@ Pod::Spec.new do |s|
   s.name         = "IQCoreDataBrowser"
   s.version      = "0.0.1"
   s.summary      = "Fast visualization of CoreData context content"
-  s.homepage     = "http://gitlab.inqbarna.com/internal/iq-core-data-browser"
+  s.homepage     = "https://github.com/InQBarna/iq-core-data-browser"
   s.author       = { "David Romacho" => "david.romacho@inqbarna.com", "Sergi Hernanz" => "sergi.hernanz@inqbarna.com"  }
   s.license      = 'commercial'
 
