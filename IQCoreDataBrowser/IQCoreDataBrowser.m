@@ -44,6 +44,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy,   nullable) NSArray                     *relationships;
 @property (nonatomic, strong, nullable) NSFetchedResultsController  *fetchedResultsController;
 @property (nonatomic, strong, nullable) UISearchBar                 *searchBar;
+@property (nonatomic, strong, nullable) NSNumberFormatter           *numberFormatter;
 @end
 NS_ASSUME_NONNULL_END
 
@@ -212,6 +213,12 @@ NS_ASSUME_NONNULL_END
 
 - (NSPredicate*)searchPredicateForEntity:(NSEntityDescription*)entity text:(NSString*)text
 {
+    if(!self.numberFormatter) {
+        self.numberFormatter = [[NSNumberFormatter alloc] init];
+        self.numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+    }
+    NSNumber *numericValue = [self.numberFormatter numberFromString:text];
+    
     if(text.length) {
         NSMutableArray *predicates = [NSMutableArray array];
         for(NSAttributeDescription *ad in entity.attributesByName.allValues) {
@@ -220,13 +227,24 @@ NS_ASSUME_NONNULL_END
                 if(p) {
                     [predicates addObject:p];
                 }
-            } else if(ad.attributeType == NSInteger16AttributeType ||
-                      ad.attributeType == NSInteger32AttributeType ||
-                      ad.attributeType == NSInteger64AttributeType ||
-                      ad.attributeType == NSDoubleAttributeType ||
-                      ad.attributeType == NSFloatAttributeType) {
-                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", ad.name, text];
-                if(p) {
+            } else if(numericValue) {
+            
+                NSNumber *value;
+                
+                if(ad.attributeType == NSInteger16AttributeType) {
+                    value = @(numericValue.shortValue);
+                } else if(ad.attributeType == NSInteger32AttributeType) {
+                    value = @(numericValue.integerValue);
+                } else if(ad.attributeType == NSInteger64AttributeType) {
+                    value = @(numericValue.unsignedLongLongValue);
+                } else if(ad.attributeType == NSDoubleAttributeType) {
+                    value = @(numericValue.doubleValue);
+                } else if(ad.attributeType == NSFloatAttributeType) {
+                    value = @(numericValue.floatValue);
+                }
+                
+                if(value) {
+                    NSPredicate *p = [NSPredicate predicateWithFormat:@"%K == %@", ad.name, value];
                     [predicates addObject:p];
                 }
             }
