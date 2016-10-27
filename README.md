@@ -66,5 +66,5 @@ Instantiating and presenting IQCOreDataBrowser:
 
 ### Podfile
 ```ruby
-pod 'IQCoreDataBrowser', :git => 'https://github.com/InQBarna/iq-core-data-browser/iq-core-data-browser.git'
+pod 'IQCoreDataBrowser', :git => 'https://github.com/InQBarna/iq-core-data-browser.git'
 ```
