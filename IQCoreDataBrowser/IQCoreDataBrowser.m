@@ -431,8 +431,8 @@ NS_ASSUME_NONNULL_END
     
     if(value) {
         cell.detailTextLabel.textColor = [UIColor darkGrayColor];
-        cell.detailTextLabel.attributedText = [self highlightText:[value description]];
-        
+        NSString *valueString = [[value description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]; // value as single line
+        cell.detailTextLabel.attributedText = [self highlightText:valueString];
     } else {
         cell.detailTextLabel.textColor = [UIColor orangeColor];
         cell.detailTextLabel.text = @"nil";
