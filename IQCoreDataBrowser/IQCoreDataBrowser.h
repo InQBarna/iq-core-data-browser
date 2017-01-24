@@ -34,6 +34,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface IQCoreDataBrowser : UITableViewController
 
+@property (nonatomic) BOOL allowsEditing;
+
 - (id)initWithContext:(NSManagedObjectContext*)moc;
 
 - (id)initWithTitle:(NSString*)title
