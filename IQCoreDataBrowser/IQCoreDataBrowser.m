@@ -585,6 +585,15 @@ NS_ASSUME_NONNULL_END
     }
 }
 
+- (void)saveContext {
+    NSError *error = nil;
+    if (![self.moc save:&error]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Could not save context" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
+}
+
 - (void)dismiss {
     [self dismissViewControllerAnimated:YES completion:nil];
 }
@@ -752,6 +761,7 @@ NS_ASSUME_NONNULL_END
                             NSNumber *number = @([text boolValue]);
                             [self.object setValue:number forKey:attribute.name];
                         }
+                        [self saveContext];
                     }]];
                     
                     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
@@ -791,6 +801,7 @@ NS_ASSUME_NONNULL_END
             NSManagedObject *o = [self.fetchedResultsController objectAtIndexPath:indexPath];
             if (editingStyle == UITableViewCellEditingStyleDelete) {
                 [self.moc deleteObject:o];
+                [self saveContext];
                 // NSFetchResultsController will update table
             }
         } break;
@@ -799,6 +810,7 @@ NS_ASSUME_NONNULL_END
             NSManagedObject *o = self.objects[indexPath.row];
             if (editingStyle == UITableViewCellEditingStyleDelete) {
                 [self.moc deleteObject:o];
+                [self saveContext];
                 // no NSFetchResultsController to update table, done by code
                 [self.objects removeObject:o];
                 [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
