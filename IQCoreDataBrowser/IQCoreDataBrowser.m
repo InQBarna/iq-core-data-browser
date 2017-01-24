@@ -706,6 +706,60 @@ NS_ASSUME_NONNULL_END
                         vc = [[IQCoreDataBrowser alloc] initWithObject:o];
                     }
                 }
+            } else if (self.allowsEditing) { // attributes
+                NSAttributeDescription *attribute = self.attributes[indexPath.row];
+                NSAttributeType type = attribute.attributeType;
+                
+                // integer, decimal, double, float, string, boolean
+                if (type >= NSInteger16AttributeType && type <= NSBooleanAttributeType)
+                {
+                    NSString *title = [NSString stringWithFormat:@"Value for '%@'", attribute.name];
+                    
+                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:nil preferredStyle:UIAlertControllerStyleAlert];
+                    
+                    [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+                        if (type >= NSInteger16AttributeType && type <= NSInteger64AttributeType || type == NSBooleanAttributeType)
+                        {
+                            textField.keyboardType = UIKeyboardTypeNumberPad;
+                        }
+                        else if (type >= NSDecimalAttributeType && type <= NSFloatAttributeType)
+                        {
+                            textField.keyboardType = UIKeyboardTypeDecimalPad;
+                        }
+                        
+                        id value = [self.object valueForKey:attribute.name];
+                        textField.text = [NSString stringWithFormat:@"%@", value];
+                    }];
+                    
+                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                        NSString *text = alert.textFields[0].text;
+                        if (type >= NSInteger16AttributeType && type <= NSInteger64AttributeType)
+                        {
+                            NSNumber *number = @([text longLongValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                        else if (type >= NSDecimalAttributeType && type <= NSFloatAttributeType)
+                        {
+                            NSNumber *number = @([text doubleValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                        else if (type == NSStringAttributeType)
+                        {
+                            [self.object setValue:text forKey:attribute.name];
+                        }
+                        else if (type == NSBooleanAttributeType)
+                        {
+                            NSNumber *number = @([text boolValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                    }]];
+                    
+                    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+                    
+                    [self presentViewController:alert animated:YES completion:nil];
+                }
+                
+                [tableView deselectRowAtIndexPath:indexPath animated:YES];
             }
             break;
             
