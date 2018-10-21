@@ -226,7 +226,7 @@ NS_ASSUME_NONNULL_END
                 if(p) {
                     [predicates addObject:p];
                 }
-            } else if(numericValue) {
+            } else if(numericValue != nil) {
             
                 NSNumber *value;
                 
@@ -242,7 +242,7 @@ NS_ASSUME_NONNULL_END
                     value = @(numericValue.floatValue);
                 }
                 
-                if(value) {
+                if(value != nil) {
                     NSPredicate *p = [NSPredicate predicateWithFormat:@"%K == %@", ad.name, value];
                     [predicates addObject:p];
                 }
@@ -289,7 +289,7 @@ NS_ASSUME_NONNULL_END
             NSPredicate *filter = [self searchPredicateForEntity:entity text:searchText];
             
             if(fetchRequest.predicate) {
-                filter = [NSCompoundPredicate andPredicateWithSubpredicates:@[filter, fetchRequest.predicate]];
+                fetchRequest.predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[filter, fetchRequest.predicate]];
             } else {
                 fetchRequest.predicate = filter;
             }
@@ -727,7 +727,7 @@ NS_ASSUME_NONNULL_END
                     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:nil preferredStyle:UIAlertControllerStyleAlert];
                     
                     [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
-                        if (type >= NSInteger16AttributeType && type <= NSInteger64AttributeType || type == NSBooleanAttributeType)
+                        if ((type >= NSInteger16AttributeType && type <= NSInteger64AttributeType) || type == NSBooleanAttributeType)
                         {
                             textField.keyboardType = UIKeyboardTypeNumberPad;
                         }
