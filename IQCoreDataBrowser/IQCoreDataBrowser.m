@@ -111,7 +111,7 @@ NS_ASSUME_NONNULL_END
         self.mode = IQCoreDataBrowserModeContext;
         self.moc = moc;
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:moc];
     }
@@ -183,7 +183,7 @@ NS_ASSUME_NONNULL_END
         self.objects = objects.mutableCopy;
         
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:moc];
     }
@@ -203,7 +203,7 @@ NS_ASSUME_NONNULL_END
         self.entityDescription = object.entity;
         
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.moc];
     }
@@ -265,6 +265,12 @@ NS_ASSUME_NONNULL_END
     
     NSAssert(entity, @"Could not find entity with name '%@'", entityName);
     return entity;
+}
+
+- (void)reloadTableViewInMainThread {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self reloadTableView];
+    });
 }
 
 - (void)reloadTableView
