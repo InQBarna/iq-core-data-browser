@@ -153,7 +153,11 @@ NS_ASSUME_NONNULL_END
     NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
     NSAssert(entityDescription, @"No NSEntityDescription for '%@'", entityName);
     
-    NSString *keyPath = [self.class identifierKeyPathForEntityDescription:entityDescription];
+    NSString *keyPath = [self.class stringOrNumericKeyPathForEntityDescription:entityDescription indexed:YES];
+    if(!keyPath) {
+        keyPath = [self.class stringOrNumericKeyPathForEntityDescription:entityDescription indexed:NO];
+    }
+
     if(!keyPath) {
         NSAttributeDescription *d = entityDescription.attributesByName.allValues.firstObject;
         keyPath = d.name;
@@ -514,7 +518,7 @@ NS_ASSUME_NONNULL_END
     }
     
     if(!result) {
-        NSString *keyPath = [self.class identifierKeyPathForEntityDescription:object.entity];
+        NSString *keyPath = [self.class stringOrNumericKeyPathForEntityDescription:object.entity indexed:YES];
         if(keyPath) {
             id val = [object valueForKey:keyPath];
             
@@ -550,23 +554,24 @@ NS_ASSUME_NONNULL_END
     return result;
 }
 
-
-+ (NSString*)identifierKeyPathForEntityDescription:(NSEntityDescription*)entityDescription
++ (NSString*)stringOrNumericKeyPathForEntityDescription:(NSEntityDescription*)entityDescription indexed:(BOOL)indexed
 {
     NSSortDescriptor *sd = [NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES];
     NSArray *attributes = [entityDescription.attributesByName.allValues sortedArrayUsingDescriptors:@[sd]];
-    
+
     for(NSAttributeDescription *a in attributes) {
-        if(a.indexed) {
-            if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSString class])]) {
-                return a.name;
-            }
-            if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSNumber class])]) {
-                return a.name;
-            }
+        if(indexed && !a.indexed) {
+            continue;
+        }
+
+        if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSString class])]) {
+            return a.name;
+        }
+        if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSNumber class])]) {
+            return a.name;
         }
     }
-    
+
     return nil;
 }
 
