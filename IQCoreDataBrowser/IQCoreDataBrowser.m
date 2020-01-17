@@ -73,6 +73,13 @@ NS_ASSUME_NONNULL_END
         self.searchBar = searchBar;
     }
     
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reloadViewController)name:UIApplicationDidBecomeActiveNotification object:nil];
+    
+    [self reloadTableView];
+}
+
+- (void) reloadViewController {
+    [[self.navigationController navigationBar] setBarTintColor: [self isDarkModeEnabled] ? [UIColor blackColor] : [UIColor whiteColor]];
     [self reloadTableView];
 }
 
@@ -84,8 +91,14 @@ NS_ASSUME_NONNULL_END
                                                                 target:self
                                                                 action:@selector(dismiss)];
         self.navigationItem.rightBarButtonItem = item;
+        
+        if ([self isDarkModeEnabled]) {
+            UINavigationBar *bar = [self.navigationController navigationBar];
+            [bar setBarTintColor: [UIColor blackColor]];
+        }
     }
 }
+
 
 #pragma mark -
 #pragma mark IQCoreDataBrowser methods
@@ -399,6 +412,7 @@ NS_ASSUME_NONNULL_END
 {
     // Set title
     cell.textLabel.attributedText = [self highlightText:entityDescription.name];
+    cell.textLabel.textColor = [self isDarkModeEnabled] ? [UIColor whiteColor] : [UIColor blackColor];
     
     // Set detail
     NSFetchRequest *fr = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
@@ -411,7 +425,7 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryNone;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     } else {
         cell.detailTextLabel.text = @"Error";
         cell.accessoryType = UITableViewCellAccessoryNone;
@@ -423,10 +437,11 @@ NS_ASSUME_NONNULL_END
 {
     // Set title
     cell.textLabel.attributedText = [self highlightText:[self titleForObject:object]];
+    cell.textLabel.textColor = [self isDarkModeEnabled] ? [UIColor whiteColor] : [UIColor blackColor];
     
     // Set detail
-    cell.detailTextLabel.textColor = [UIColor darkGrayColor];
     cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object]];
+    cell.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 }
 
@@ -437,15 +452,15 @@ NS_ASSUME_NONNULL_END
                        attribute.name,
                        [self.class nameForAttributeType:attribute.attributeType]];
     cell.textLabel.attributedText = [self highlightText:title];
+    cell.textLabel.textColor = [self isDarkModeEnabled] ? [UIColor whiteColor] : [UIColor blackColor];
     
     if(value) {
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
         NSString *valueString = [[value description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]; // value as single line
         cell.detailTextLabel.attributedText = [self highlightText:valueString];
     } else {
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
         cell.detailTextLabel.text = @"nil";
     }
+    cell.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     
     cell.accessoryType = UITableViewCellAccessoryNone;
 }
@@ -453,6 +468,7 @@ NS_ASSUME_NONNULL_END
 - (void)configureCell:(UITableViewCell*)cell forRelationship:(NSRelationshipDescription*)r
 {
     cell.textLabel.attributedText = [self highlightText:r.name];
+    cell.textLabel.textColor = [self isDarkModeEnabled] ? [UIColor whiteColor] : [UIColor blackColor];
     
     id value = [self.object valueForKey:r.name];
     
@@ -478,7 +494,7 @@ NS_ASSUME_NONNULL_END
     cell.accessoryType = UITableViewCellAccessoryNone;
     if(!value) {
         detail = [detail stringByAppendingString:@", nil"];
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
+        cell.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     } else {
         
         if(r.toMany) {
@@ -489,7 +505,7 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     }
     cell.detailTextLabel.text = detail;
 }
@@ -503,7 +519,9 @@ NS_ASSUME_NONNULL_END
                                         reuseIdentifier:reuseIdentifier];
         
         result.textLabel.font = [UIFont systemFontOfSize:12.0f];
+        result.textLabel.textColor = [self isDarkModeEnabled] ? [UIColor whiteColor] : [UIColor blackColor];
         result.detailTextLabel.font = [UIFont systemFontOfSize:10.0f];
+        result.detailTextLabel.textColor = [self isDarkModeEnabled] ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
     }
     
     return result;
@@ -607,6 +625,21 @@ NS_ASSUME_NONNULL_END
 
 - (void)dismiss {
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (BOOL)isDarkModeEnabled {
+    if (@available(iOS 13.0, *)) {
+        switch (UITraitCollection.currentTraitCollection.userInterfaceStyle) {
+            case UIUserInterfaceStyleDark:
+                return true;
+            default:
+                return false;
+        }
+        return false;
+    } else {
+        return false;
+    }
+    
 }
 
 #pragma mark -
