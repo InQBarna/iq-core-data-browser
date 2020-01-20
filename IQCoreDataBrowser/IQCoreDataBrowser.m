@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_END
 {
     [super viewDidLoad];
     
+    self.tableView.tableFooterView = [[UIView alloc] init];
+    
     if(self.mode != IQCoreDataBrowserModeObjectList) {
         UISearchBar *searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0.0f, 0.0f, self.tableView.frame.size.width, 44.0f)];
         searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -72,7 +74,6 @@ NS_ASSUME_NONNULL_END
         self.tableView.tableHeaderView = searchBar;
         self.searchBar = searchBar;
     }
-    
     [self reloadTableView];
 }
 
@@ -85,6 +86,11 @@ NS_ASSUME_NONNULL_END
                                                                 action:@selector(dismiss)];
         self.navigationItem.rightBarButtonItem = item;
     }
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange: previousTraitCollection];
+    [self reloadTableView];
 }
 
 #pragma mark -
@@ -380,15 +386,15 @@ NS_ASSUME_NONNULL_END
     }
 }
 
-- (NSAttributedString*)highlightText:text
+- (NSAttributedString*)highlightText:text color:(UIColor*)textColor
 {
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:text
-                                                                               attributes:@{NSForegroundColorAttributeName : [UIColor blackColor]}];
+                                                                               attributes:@{NSForegroundColorAttributeName : textColor}];
     
     if(self.searchBar.text) {
         NSRange range = [text rangeOfString:self.searchBar.text options:NSCaseInsensitiveSearch];
         if(range.location != NSNotFound) {
-            [result addAttributes:@{NSForegroundColorAttributeName : [UIColor blueColor]} range:range];
+            [result addAttributes:@{NSForegroundColorAttributeName : self.view.tintColor} range:range];
         }
     }
     
@@ -398,7 +404,8 @@ NS_ASSUME_NONNULL_END
 - (void)configureCell:(UITableViewCell*)cell forEntity:(NSEntityDescription*)entityDescription
 {
     // Set title
-    cell.textLabel.attributedText = [self highlightText:entityDescription.name];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:entityDescription.name color:self.textColor];
     
     // Set detail
     NSFetchRequest *fr = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
@@ -411,22 +418,23 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryNone;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     } else {
         cell.detailTextLabel.text = @"Error";
         cell.accessoryType = UITableViewCellAccessoryNone;
-        cell.detailTextLabel.textColor = [UIColor redColor];
+        cell.detailTextLabel.textColor = self.view.tintColor;
     }
 }
 
 - (void)configureCell:(UITableViewCell*)cell forObject:(NSManagedObject*)object
 {
     // Set title
-    cell.textLabel.attributedText = [self highlightText:[self titleForObject:object]];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:[self titleForObject:object] color:self.textColor];
     
     // Set detail
-    cell.detailTextLabel.textColor = [UIColor darkGrayColor];
-    cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object]];
+    cell.detailTextLabel.textColor = self.detailTextColor;
+    cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object] color:self.detailTextColor];
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 }
 
@@ -436,14 +444,15 @@ NS_ASSUME_NONNULL_END
     NSString *title = [NSString stringWithFormat:@"%@ (%@)",
                        attribute.name,
                        [self.class nameForAttributeType:attribute.attributeType]];
-    cell.textLabel.attributedText = [self highlightText:title];
-    
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:title color:self.textColor];
+
+    cell.detailTextLabel.textColor = self.detailTextColor;
+
     if(value) {
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
         NSString *valueString = [[value description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]; // value as single line
-        cell.detailTextLabel.attributedText = [self highlightText:valueString];
+        cell.detailTextLabel.attributedText = [self highlightText:valueString color:self.detailTextColor];
     } else {
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
         cell.detailTextLabel.text = @"nil";
     }
     
@@ -452,7 +461,8 @@ NS_ASSUME_NONNULL_END
 
 - (void)configureCell:(UITableViewCell*)cell forRelationship:(NSRelationshipDescription*)r
 {
-    cell.textLabel.attributedText = [self highlightText:r.name];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:r.name color:self.textColor];
     
     id value = [self.object valueForKey:r.name];
     
@@ -478,7 +488,7 @@ NS_ASSUME_NONNULL_END
     cell.accessoryType = UITableViewCellAccessoryNone;
     if(!value) {
         detail = [detail stringByAppendingString:@", nil"];
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     } else {
         
         if(r.toMany) {
@@ -489,7 +499,7 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     }
     cell.detailTextLabel.text = detail;
 }
@@ -607,6 +617,29 @@ NS_ASSUME_NONNULL_END
 
 - (void)dismiss {
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (BOOL)isDarkModeEnabled {
+    if (@available(iOS 13.0, *)) {
+        switch (UITraitCollection.currentTraitCollection.userInterfaceStyle) {
+            case UIUserInterfaceStyleDark:
+                return true;
+            default:
+                return false;
+        }
+        return false;
+    } else {
+        return false;
+    }
+    
+}
+
+- (UIColor*)textColor {
+    return self.isDarkModeEnabled ? [UIColor whiteColor] : [UIColor blackColor];
+}
+
+- (UIColor*)detailTextColor {
+    return self.isDarkModeEnabled ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
 }
 
 #pragma mark -
