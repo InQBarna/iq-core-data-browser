@@ -32,18 +32,18 @@ typedef enum {
 
 NS_ASSUME_NONNULL_BEGIN
 @interface IQCoreDataBrowser ()<NSFetchedResultsControllerDelegate, UISearchBarDelegate>
-@property (nonatomic, assign) IQCoreDataBrowserMode                 mode;
-@property (nonatomic, strong, nullable) NSManagedObjectContext      *moc;
-@property (nonatomic, strong, nullable) NSManagedObject             *object;
-@property (nonatomic, strong, nullable) NSFetchRequest              *fetchRequest;
-@property (nonatomic, strong, nullable) NSEntityDescription         *entityDescription;
-@property (nonatomic, strong, nullable) NSArray                     *entities;
-@property (nonatomic, copy,   nullable) NSArray                     *objects;
-@property (nonatomic, copy,   nullable) NSArray                     *allObjects;
-@property (nonatomic, copy,   nullable) NSArray                     *attributes;
-@property (nonatomic, copy,   nullable) NSArray                     *relationships;
-@property (nonatomic, strong, nullable) NSFetchedResultsController  *fetchedResultsController;
-@property (nonatomic, strong, nullable) UISearchBar                 *searchBar;
+@property (nonatomic) IQCoreDataBrowserMode                 mode;
+@property (nonatomic, nullable) NSManagedObjectContext      *moc;
+@property (nonatomic, nullable) NSManagedObject             *object;
+@property (nonatomic, nullable) NSFetchRequest              *fetchRequest;
+@property (nonatomic, nullable) NSEntityDescription         *entityDescription;
+@property (nonatomic, nullable) NSArray                     *entities;
+@property (nonatomic, nullable) NSMutableArray              *objects;
+@property (nonatomic, nullable) NSArray                     *attributes;
+@property (nonatomic, nullable) NSArray                     *relationships;
+@property (nonatomic, nullable) NSFetchedResultsController  *fetchedResultsController;
+@property (nonatomic, nullable) UISearchBar                 *searchBar;
+@property (nonatomic, nullable) NSNumberFormatter           *numberFormatter;
 @end
 NS_ASSUME_NONNULL_END
 
@@ -63,6 +63,8 @@ NS_ASSUME_NONNULL_END
 {
     [super viewDidLoad];
     
+    self.tableView.tableFooterView = [[UIView alloc] init];
+    
     if(self.mode != IQCoreDataBrowserModeObjectList) {
         UISearchBar *searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0.0f, 0.0f, self.tableView.frame.size.width, 44.0f)];
         searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -72,7 +74,6 @@ NS_ASSUME_NONNULL_END
         self.tableView.tableHeaderView = searchBar;
         self.searchBar = searchBar;
     }
-    
     [self reloadTableView];
 }
 
@@ -85,6 +86,11 @@ NS_ASSUME_NONNULL_END
                                                                 action:@selector(dismiss)];
         self.navigationItem.rightBarButtonItem = item;
     }
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange: previousTraitCollection];
+    [self reloadTableView];
 }
 
 #pragma mark -
@@ -111,7 +117,7 @@ NS_ASSUME_NONNULL_END
         self.mode = IQCoreDataBrowserModeContext;
         self.moc = moc;
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:moc];
     }
@@ -153,7 +159,11 @@ NS_ASSUME_NONNULL_END
     NSEntityDescription *entityDescription = [entitiesByName objectForKey:entityName];
     NSAssert(entityDescription, @"No NSEntityDescription for '%@'", entityName);
     
-    NSString *keyPath = [self.class identifierKeyPathForEntityDescription:entityDescription];
+    NSString *keyPath = [self.class stringOrNumericKeyPathForEntityDescription:entityDescription indexed:YES];
+    if(!keyPath) {
+        keyPath = [self.class stringOrNumericKeyPathForEntityDescription:entityDescription indexed:NO];
+    }
+
     if(!keyPath) {
         NSAttributeDescription *d = entityDescription.attributesByName.allValues.firstObject;
         keyPath = d.name;
@@ -180,10 +190,10 @@ NS_ASSUME_NONNULL_END
         self.title = title;
         self.mode = IQCoreDataBrowserModeObjectList;
         self.moc = moc;
-        self.allObjects = objects;
+        self.objects = objects.mutableCopy;
         
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:moc];
     }
@@ -203,7 +213,7 @@ NS_ASSUME_NONNULL_END
         self.entityDescription = object.entity;
         
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(reloadTableView)
+                                                 selector:@selector(reloadTableViewInMainThread)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.moc];
     }
@@ -212,6 +222,12 @@ NS_ASSUME_NONNULL_END
 
 - (NSPredicate*)searchPredicateForEntity:(NSEntityDescription*)entity text:(NSString*)text
 {
+    if(!self.numberFormatter) {
+        self.numberFormatter = [[NSNumberFormatter alloc] init];
+        self.numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+    }
+    NSNumber *numericValue = [self.numberFormatter numberFromString:text];
+    
     if(text.length) {
         NSMutableArray *predicates = [NSMutableArray array];
         for(NSAttributeDescription *ad in entity.attributesByName.allValues) {
@@ -220,13 +236,24 @@ NS_ASSUME_NONNULL_END
                 if(p) {
                     [predicates addObject:p];
                 }
-            } else if(ad.attributeType == NSInteger16AttributeType ||
-                      ad.attributeType == NSInteger32AttributeType ||
-                      ad.attributeType == NSInteger64AttributeType ||
-                      ad.attributeType == NSDoubleAttributeType ||
-                      ad.attributeType == NSFloatAttributeType) {
-                NSPredicate *p = [NSPredicate predicateWithFormat:@"%K CONTAINS[cd] %@", ad.name, text];
-                if(p) {
+            } else if(numericValue != nil) {
+            
+                NSNumber *value;
+                
+                if(ad.attributeType == NSInteger16AttributeType) {
+                    value = @(numericValue.shortValue);
+                } else if(ad.attributeType == NSInteger32AttributeType) {
+                    value = @(numericValue.integerValue);
+                } else if(ad.attributeType == NSInteger64AttributeType) {
+                    value = @(numericValue.unsignedLongLongValue);
+                } else if(ad.attributeType == NSDoubleAttributeType) {
+                    value = @(numericValue.doubleValue);
+                } else if(ad.attributeType == NSFloatAttributeType) {
+                    value = @(numericValue.floatValue);
+                }
+                
+                if(value != nil) {
+                    NSPredicate *p = [NSPredicate predicateWithFormat:@"%K == %@", ad.name, value];
                     [predicates addObject:p];
                 }
             }
@@ -248,6 +275,12 @@ NS_ASSUME_NONNULL_END
     
     NSAssert(entity, @"Could not find entity with name '%@'", entityName);
     return entity;
+}
+
+- (void)reloadTableViewInMainThread {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self reloadTableView];
+    });
 }
 
 - (void)reloadTableView
@@ -272,7 +305,7 @@ NS_ASSUME_NONNULL_END
             NSPredicate *filter = [self searchPredicateForEntity:entity text:searchText];
             
             if(fetchRequest.predicate) {
-                filter = [NSCompoundPredicate andPredicateWithSubpredicates:@[filter, fetchRequest.predicate]];
+                fetchRequest.predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[filter, fetchRequest.predicate]];
             } else {
                 fetchRequest.predicate = filter;
             }
@@ -281,6 +314,7 @@ NS_ASSUME_NONNULL_END
                                                                                 managedObjectContext:self.moc
                                                                                   sectionNameKeyPath:nil
                                                                                            cacheName:nil];
+            self.fetchedResultsController.delegate = self;
             
             NSError *error = nil;
             if(![self.fetchedResultsController performFetch:&error]) {
@@ -289,7 +323,6 @@ NS_ASSUME_NONNULL_END
         } break;
             
         case IQCoreDataBrowserModeObjectList: {
-            self.objects = self.allObjects;
         } break;
             
         case IQCoreDataBrowserModeObject: {
@@ -353,15 +386,15 @@ NS_ASSUME_NONNULL_END
     }
 }
 
-- (NSAttributedString*)highlightText:text
+- (NSAttributedString*)highlightText:text color:(UIColor*)textColor
 {
     NSMutableAttributedString *result = [[NSMutableAttributedString alloc] initWithString:text
-                                                                               attributes:@{NSForegroundColorAttributeName : [UIColor blackColor]}];
+                                                                               attributes:@{NSForegroundColorAttributeName : textColor}];
     
     if(self.searchBar.text) {
         NSRange range = [text rangeOfString:self.searchBar.text options:NSCaseInsensitiveSearch];
         if(range.location != NSNotFound) {
-            [result addAttributes:@{NSForegroundColorAttributeName : [UIColor blueColor]} range:range];
+            [result addAttributes:@{NSForegroundColorAttributeName : self.view.tintColor} range:range];
         }
     }
     
@@ -371,7 +404,8 @@ NS_ASSUME_NONNULL_END
 - (void)configureCell:(UITableViewCell*)cell forEntity:(NSEntityDescription*)entityDescription
 {
     // Set title
-    cell.textLabel.attributedText = [self highlightText:entityDescription.name];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:entityDescription.name color:self.textColor];
     
     // Set detail
     NSFetchRequest *fr = [NSFetchRequest fetchRequestWithEntityName:entityDescription.name];
@@ -384,22 +418,23 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryNone;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     } else {
         cell.detailTextLabel.text = @"Error";
         cell.accessoryType = UITableViewCellAccessoryNone;
-        cell.detailTextLabel.textColor = [UIColor redColor];
+        cell.detailTextLabel.textColor = self.view.tintColor;
     }
 }
 
 - (void)configureCell:(UITableViewCell*)cell forObject:(NSManagedObject*)object
 {
     // Set title
-    cell.textLabel.attributedText = [self highlightText:[self titleForObject:object]];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:[self titleForObject:object] color:self.textColor];
     
     // Set detail
-    cell.detailTextLabel.textColor = [UIColor darkGrayColor];
-    cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object]];
+    cell.detailTextLabel.textColor = self.detailTextColor;
+    cell.detailTextLabel.attributedText = [self highlightText:[self detailForObject:object] color:self.detailTextColor];
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 }
 
@@ -409,14 +444,15 @@ NS_ASSUME_NONNULL_END
     NSString *title = [NSString stringWithFormat:@"%@ (%@)",
                        attribute.name,
                        [self.class nameForAttributeType:attribute.attributeType]];
-    cell.textLabel.attributedText = [self highlightText:title];
-    
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:title color:self.textColor];
+
+    cell.detailTextLabel.textColor = self.detailTextColor;
+
     if(value) {
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
-        cell.detailTextLabel.attributedText = [self highlightText:[value description]];
-        
+        NSString *valueString = [[value description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "]; // value as single line
+        cell.detailTextLabel.attributedText = [self highlightText:valueString color:self.detailTextColor];
     } else {
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
         cell.detailTextLabel.text = @"nil";
     }
     
@@ -425,7 +461,8 @@ NS_ASSUME_NONNULL_END
 
 - (void)configureCell:(UITableViewCell*)cell forRelationship:(NSRelationshipDescription*)r
 {
-    cell.textLabel.attributedText = [self highlightText:r.name];
+    cell.textLabel.textColor = self.textColor;
+    cell.textLabel.attributedText = [self highlightText:r.name color:self.textColor];
     
     id value = [self.object valueForKey:r.name];
     
@@ -451,7 +488,7 @@ NS_ASSUME_NONNULL_END
     cell.accessoryType = UITableViewCellAccessoryNone;
     if(!value) {
         detail = [detail stringByAppendingString:@", nil"];
-        cell.detailTextLabel.textColor = [UIColor orangeColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     } else {
         
         if(r.toMany) {
@@ -462,7 +499,7 @@ NS_ASSUME_NONNULL_END
         } else {
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         }
-        cell.detailTextLabel.textColor = [UIColor darkGrayColor];
+        cell.detailTextLabel.textColor = self.detailTextColor;
     }
     cell.detailTextLabel.text = detail;
 }
@@ -491,7 +528,7 @@ NS_ASSUME_NONNULL_END
     }
     
     if(!result) {
-        NSString *keyPath = [self.class identifierKeyPathForEntityDescription:object.entity];
+        NSString *keyPath = [self.class stringOrNumericKeyPathForEntityDescription:object.entity indexed:YES];
         if(keyPath) {
             id val = [object valueForKey:keyPath];
             
@@ -527,23 +564,24 @@ NS_ASSUME_NONNULL_END
     return result;
 }
 
-
-+ (NSString*)identifierKeyPathForEntityDescription:(NSEntityDescription*)entityDescription
++ (NSString*)stringOrNumericKeyPathForEntityDescription:(NSEntityDescription*)entityDescription indexed:(BOOL)indexed
 {
     NSSortDescriptor *sd = [NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES];
     NSArray *attributes = [entityDescription.attributesByName.allValues sortedArrayUsingDescriptors:@[sd]];
-    
+
     for(NSAttributeDescription *a in attributes) {
-        if(a.indexed) {
-            if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSString class])]) {
-                return a.name;
-            }
-            if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSNumber class])]) {
-                return a.name;
-            }
+        if(indexed && !a.indexed) {
+            continue;
+        }
+
+        if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSString class])]) {
+            return a.name;
+        }
+        if([a.attributeValueClassName isEqualToString:NSStringFromClass([NSNumber class])]) {
+            return a.name;
         }
     }
-    
+
     return nil;
 }
 
@@ -568,8 +606,40 @@ NS_ASSUME_NONNULL_END
     }
 }
 
+- (void)saveContext {
+    NSError *error = nil;
+    if (![self.moc save:&error]) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Could not save context" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+    }
+}
+
 - (void)dismiss {
     [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (BOOL)isDarkModeEnabled {
+    if (@available(iOS 13.0, *)) {
+        switch (UITraitCollection.currentTraitCollection.userInterfaceStyle) {
+            case UIUserInterfaceStyleDark:
+                return true;
+            default:
+                return false;
+        }
+        return false;
+    } else {
+        return false;
+    }
+    
+}
+
+- (UIColor*)textColor {
+    return self.isDarkModeEnabled ? [UIColor whiteColor] : [UIColor blackColor];
+}
+
+- (UIColor*)detailTextColor {
+    return self.isDarkModeEnabled ? [UIColor lightGrayColor] : [UIColor darkGrayColor];
 }
 
 #pragma mark -
@@ -689,6 +759,61 @@ NS_ASSUME_NONNULL_END
                         vc = [[IQCoreDataBrowser alloc] initWithObject:o];
                     }
                 }
+            } else if (self.allowsEditing) { // attributes
+                NSAttributeDescription *attribute = self.attributes[indexPath.row];
+                NSAttributeType type = attribute.attributeType;
+                
+                // integer, decimal, double, float, string, boolean
+                if (type >= NSInteger16AttributeType && type <= NSBooleanAttributeType)
+                {
+                    NSString *title = [NSString stringWithFormat:@"Value for '%@'", attribute.name];
+                    
+                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:nil preferredStyle:UIAlertControllerStyleAlert];
+                    
+                    [alert addTextFieldWithConfigurationHandler:^(UITextField * _Nonnull textField) {
+                        if ((type >= NSInteger16AttributeType && type <= NSInteger64AttributeType) || type == NSBooleanAttributeType)
+                        {
+                            textField.keyboardType = UIKeyboardTypeNumberPad;
+                        }
+                        else if (type >= NSDecimalAttributeType && type <= NSFloatAttributeType)
+                        {
+                            textField.keyboardType = UIKeyboardTypeDecimalPad;
+                        }
+                        
+                        id value = [self.object valueForKey:attribute.name];
+                        textField.text = [NSString stringWithFormat:@"%@", value];
+                    }];
+                    
+                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                        NSString *text = alert.textFields[0].text;
+                        if (type >= NSInteger16AttributeType && type <= NSInteger64AttributeType)
+                        {
+                            NSNumber *number = @([text longLongValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                        else if (type >= NSDecimalAttributeType && type <= NSFloatAttributeType)
+                        {
+                            NSNumber *number = @([text doubleValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                        else if (type == NSStringAttributeType)
+                        {
+                            [self.object setValue:text forKey:attribute.name];
+                        }
+                        else if (type == NSBooleanAttributeType)
+                        {
+                            NSNumber *number = @([text boolValue]);
+                            [self.object setValue:number forKey:attribute.name];
+                        }
+                        [self saveContext];
+                    }]];
+                    
+                    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+                    
+                    [self presentViewController:alert animated:YES completion:nil];
+                }
+                
+                [tableView deselectRowAtIndexPath:indexPath animated:YES];
             }
             break;
             
@@ -698,7 +823,69 @@ NS_ASSUME_NONNULL_END
     }
     
     if(vc) {
+        vc.allowsEditing = self.allowsEditing;
         [self.navigationController pushViewController:vc animated:YES];
+    }
+}
+
+- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return (self.mode == IQCoreDataBrowserModePredicate || self.mode == IQCoreDataBrowserModeObjectList);
+}
+
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    switch (self.mode) {
+        case IQCoreDataBrowserModeContext:
+        case IQCoreDataBrowserModeObject:
+            // not deletable
+            break;
+            
+        case IQCoreDataBrowserModePredicate: {
+            NSManagedObject *o = [self.fetchedResultsController objectAtIndexPath:indexPath];
+            if (editingStyle == UITableViewCellEditingStyleDelete) {
+                [self.moc deleteObject:o];
+                [self saveContext];
+                // NSFetchResultsController will update table
+            }
+        } break;
+            
+        case IQCoreDataBrowserModeObjectList: {
+            NSManagedObject *o = self.objects[indexPath.row];
+            if (editingStyle == UITableViewCellEditingStyleDelete) {
+                [self.moc deleteObject:o];
+                [self saveContext];
+                // no NSFetchResultsController to update table, done by code
+                [self.objects removeObject:o];
+                [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+                
+/*
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:[self titleForObject:o] message:nil preferredStyle:UIAlertControllerStyleAlert];
+                
+                [alert addAction:[UIAlertAction actionWithTitle:@"Remove from Relationship" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                    //TODO
+                    self.tableView.editing = NO;
+                }]];
+
+                [alert addAction:[UIAlertAction actionWithTitle:@"Delete Object" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+                    [self.moc deleteObject:o];
+                    [self.objects removeObject:o];
+                    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+                    self.tableView.editing = NO;
+                }]];
+                
+                [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction * _Nonnull action) {
+                    self.tableView.editing = NO;
+                }]];
+
+                [self presentViewController:alert animated:YES completion:nil];
+*/
+            }
+        } break;
+            
+        default:
+            NSAssert(NO, @"Unknown mode %@", @(self.mode));
+            break;
     }
 }
 
@@ -711,6 +898,57 @@ NS_ASSUME_NONNULL_END
         default:
             return nil;
     }
+}
+
+#pragma mark - NSFetchedResultsControllerDelegate methods
+
+- (void)controllerWillChangeContent:(NSFetchedResultsController *)controller
+{
+    [self.tableView beginUpdates];
+}
+
+- (void)controller:(NSFetchedResultsController *)controller
+   didChangeObject:(id)anObject
+       atIndexPath:(NSIndexPath *)indexPath
+     forChangeType:(NSFetchedResultsChangeType)type
+      newIndexPath:(NSIndexPath *)newIndexPath
+{
+    UITableView *tableView = self.tableView;
+    
+    switch(type) {
+            
+        case NSFetchedResultsChangeInsert:
+            [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+            break;
+            
+        case NSFetchedResultsChangeDelete: {
+            [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+        } break;
+            
+        case NSFetchedResultsChangeUpdate:
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+            break;
+            
+        case NSFetchedResultsChangeMove:
+            if([indexPath isEqual:newIndexPath]) {
+                break;
+            }
+            [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+            [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationFade];
+            break;
+    }
+}
+
+- (void)controller:(NSFetchedResultsController *)controller
+  didChangeSection:(id )sectionInfo
+           atIndex:(NSUInteger)sectionIndex
+     forChangeType:(NSFetchedResultsChangeType)type
+{
+}
+
+- (void)controllerDidChangeContent:(NSFetchedResultsController *)controller
+{
+    [self.tableView endUpdates];
 }
 
 #pragma mark -
