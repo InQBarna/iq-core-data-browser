@@ -13,7 +13,8 @@ let package = Package(
     targets: [
         .target(
             name: "IQCoreDataBrowser",
-            path: "Sources/IQCoreDataBrowser" // No és necessari especificar publicHeadersPath
+            path: "Sources/IQCoreDataBrowser",
+            publicHeadersPath: "include"  // Apunta a la carpeta 'include' ara que SPM pugui trobar els fitxers .h
         ),
     ]
 )
