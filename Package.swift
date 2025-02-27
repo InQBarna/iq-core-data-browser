@@ -4,7 +4,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "iq-core-data-browser",
+    name: "IQCoreDataBrowser",
+        defaultLocalization: "en",    
+    platforms: [
+        .iOS(.v14)
+    ],
     products: [
         .library(
             name: "IQCoreDataBrowser",
@@ -14,7 +18,7 @@ let package = Package(
         .target(
             name: "IQCoreDataBrowser",
             path: "Sources/IQCoreDataBrowser",
-            publicHeadersPath: "include"  // Apunta a la carpeta 'include' ara que SPM pugui trobar els fitxers .h
+            publicHeadersPath: "include"
         ),
     ]
 )
